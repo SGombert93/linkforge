@@ -108,7 +108,7 @@ def create_app(settings=None):
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; "
             "form-action 'self'; img-src 'self' data: https://www.facebook.com https://*.google.com https://*.google.de https://*.googleadservices.com https://*.doubleclick.net; "
-            f"script-src 'self' 'nonce-{nonce}' https://connect.facebook.net https://www.googletagmanager.com https://www.googleadservices.com https://googleads.g.doubleclick.net; "
+            f"script-src 'self' 'nonce-{nonce}' https://connect.facebook.net https://www.facebook.com/signals/iwl.js https://www.googletagmanager.com https://www.googleadservices.com https://googleads.g.doubleclick.net; "
             "style-src 'self' 'unsafe-inline'; font-src 'self'; "
             "connect-src 'self' https://*.facebook.com https://*.google-analytics.com https://*.analytics.google.com https://*.google.com https://*.google.de https://*.googleadservices.com https://*.doubleclick.net; "
             "frame-src 'self' https://www.googletagmanager.com https://*.doubleclick.net;")
