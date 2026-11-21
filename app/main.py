@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 from .config import Settings
 from .db import connect, initialize
 from .models import Page
+from .meta import StreamingClick, send_click
 
 ROOT = Path(__file__).parent
 SERVICES = json.loads((ROOT / 'services.json').read_text())
@@ -278,6 +279,7 @@ def create_app(settings=None):
             page.update(meta_pixel='', google_ads_id='', google_ads_label='', ga4_id='')
         tracking = {k: page[k] for k in ('meta_pixel', 'google_ads_id', 'google_ads_label', 'ga4_id')}
         tracking.update(release_id=page.get('id', ''), release_slug=page['slug'], preview=preview)
+        tracking['meta_capi'] = settings.capi_enabled(page['meta_pixel'])
         # Unknown presets get a bundled generic icon. Never reflect arbitrary file paths.
         for link in page['links']:
             if not (ROOT / 'static' / 'icons' / (link['icon'] + '.svg')).is_file():
@@ -297,14 +299,26 @@ def create_app(settings=None):
     def saved_preview(page_id: str, request: Request, user=Depends(require_admin)):
         return public_response(request, get_page(page_id), preview=True)
 
-    @app.get('/r/{slug}', response_class=HTMLResponse)
-    def release(slug: str, request: Request):
+    def published_page(slug: str):
         with connect(app.state.db) as db:
             row = db.execute('SELECT id,document FROM pages WHERE slug=? AND published=1', (slug,)).fetchone()
         if not row:
             raise HTTPException(404, 'Release not found.')
         page = json.loads(row['document'])
         page['id'] = row['id']
-        return public_response(request, page)
+        return page
+
+    @app.get('/r/{slug}', response_class=HTMLResponse)
+    def release(slug: str, request: Request):
+        return public_response(request, published_page(slug))
+
+    @app.post('/r/{slug}/click', status_code=204)
+    async def streaming_click(slug: str, request: Request, click: StreamingClick):
+        if request.headers.get('origin') != settings.base_url:
+            raise HTTPException(403, 'Invalid origin.')
+        page = published_page(slug)
+        if not settings.capi_enabled(page['meta_pixel']):
+            raise HTTPException(404, 'Server tracking is disabled.')
+        await send_click(request, click, page)
 
     return app

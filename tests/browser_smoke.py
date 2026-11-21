@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright, expect
 
 ROOT=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory() as temp:
-    env=dict(os.environ,SESSION_SECRET=secrets.token_urlsafe(48),DATA_DIR=temp,BASE_URL='http://127.0.0.1:8765',OIDC_DISCOVERY_URL='')
+    env=dict(os.environ,SESSION_SECRET=secrets.token_urlsafe(48),DATA_DIR=temp,META_CAPI_DATASET_ID='123456789',META_CAPI_ACCESS_TOKEN='mock-token',BASE_URL='http://127.0.0.1:8765',OIDC_DISCOVERY_URL='')
     process=subprocess.Popen([sys.executable,'-m','uvicorn','app.main:create_app','--factory','--host','127.0.0.1','--port','8765'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
     try:
         for _ in range(80):
@@ -37,8 +37,11 @@ with tempfile.TemporaryDirectory() as temp:
             browser=pw.chromium.launch(args=['--no-sandbox'])
             context=browser.new_context(viewport={'width':1360,'height':1000})
             context.add_cookies([{'name':'linkforge_session','value':signed,'url':'http://127.0.0.1:8765','httpOnly':True,'sameSite':'Lax'}])
-            errors=[];external=[]
+            errors=[];external=[];server_clicks=[]
             def intercept(route):
+                if route.request.url == 'http://127.0.0.1:8765/r/afterglow/click':
+                    server_clicks.append(route.request.post_data_json)
+                    return route.fulfill(status=204)
                 if route.request.url.startswith('http://127.0.0.1:8765'):
                     return route.continue_()
                 external.append(route.request.url)
@@ -93,7 +96,9 @@ with tempfile.TemporaryDirectory() as temp:
             f=page.evaluate('fbq.queue.map(x=>Array.from(x))')
             assert len([e for e in g if e[0:2]==['event','conversion']])==1,g
             assert len([e for e in g if e[0:2]==['event','streaming_link_click']])==2,g
-            assert len([e for e in f if e[0:2]==['trackCustom','StreamingLinkClick']])==1,f
+            browser_ids=[e[3]['eventID'] for e in f if e[:2]==['trackCustom','StreamingLinkClick']]
+            assert len(set(browser_ids))==2
+            assert set(browser_ids)=={click['event_id'] for click in server_clicks}
             page.set_viewport_size({'width':390,'height':844})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             assert page.locator('.icon').evaluate_all('(imgs)=>imgs.every(i=>i.complete&&i.naturalWidth>0)')

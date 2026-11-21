@@ -6,7 +6,7 @@ document.querySelectorAll('[data-close]').forEach(button=>button.addEventListene
 if(config.preview){document.querySelectorAll('.service').forEach(a=>a.addEventListener('click',e=>e.preventDefault()));return;}
 if(!config.meta_pixel&&!config.google_ads_id&&!config.ga4_id)return;
 const banner=document.getElementById('consent');
-const consentKey='linkforge:consent:v1:'+JSON.stringify([config.meta_pixel,config.google_ads_id,config.ga4_id]);
+const consentKey=(config.meta_capi?'linkforge:consent:capi:v1:':'linkforge:consent:v1:')+JSON.stringify([config.meta_pixel,config.google_ads_id,config.ga4_id]);
 const conversionKey='linkforge:converted:'+config.release_id+':'+JSON.stringify([config.meta_pixel,config.google_ads_id,config.google_ads_label]);
 let allowed=false,loaded=false,converted=false;
 function get(store,key){try{return store.getItem(key);}catch{return null;}}
@@ -20,6 +20,9 @@ function clearTrackingCookies(){document.cookie.split(';').forEach(item=>{const 
 function choose(value){set(localStorage,consentKey,JSON.stringify({value,time:Date.now()}));allowed=value==='accepted';banner.hidden=true;if(allowed){load();}else if(loaded){if(window.fbq)fbq('consent','revoke');if(window.gtag)gtag('consent','update',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});clearTrackingCookies();location.reload();}}
 let saved;try{saved=JSON.parse(get(localStorage,consentKey)||'null');}catch{}
 if(saved&&Date.now()-saved.time<180*24*60*60*1000){allowed=saved.value==='accepted';if(allowed)load();}else banner.hidden=false;
+window.addEventListener('storage',event=>{
+ if(event.key===consentKey||event.key===null)location.reload();
+});
 document.getElementById('accept').addEventListener('click',()=>choose('accepted'));
 document.getElementById('reject').addEventListener('click',()=>choose('rejected'));
 document.getElementById('cookie-settings').addEventListener('click',()=>banner.hidden=false);
@@ -27,9 +30,19 @@ document.querySelectorAll('.service').forEach(link=>link.addEventListener('click
  if(!allowed)return;
  const parameters={release_id:config.release_id,release_slug:config.release_slug,service:link.dataset.service,link_index:Number(link.dataset.linkIndex)};
  if(config.ga4_id&&window.gtag)gtag('event','streaming_link_click',{...parameters,send_to:config.ga4_id});
- if(!converted&&!get(sessionStorage,conversionKey)){
+ if(config.meta_pixel){
+  const eventId=crypto.randomUUID();
+  if(config.meta_capi){
+   const body=JSON.stringify({event_id:eventId,consent:'accepted',release_id:config.release_id,
+    service:parameters.service,link_index:parameters.link_index});
+   fetch('/r/'+encodeURIComponent(config.release_slug)+'/click',{
+    method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:true
+   }).catch(()=>{});
+  }
+  if(window.fbq)fbq('trackCustom','StreamingLinkClick',parameters,{eventID:eventId});
+ }
+ if(config.google_ads_id&&!converted&&!get(sessionStorage,conversionKey)){
   converted=true;set(sessionStorage,conversionKey,'1');
-  if(config.meta_pixel&&window.fbq)fbq('trackCustom','StreamingLinkClick',parameters);
   if(config.google_ads_id&&window.gtag)gtag('event','conversion',{send_to:config.google_ads_id+'/'+config.google_ads_label,...parameters});
  }
  // Allow a bounded dispatch window for ordinary same-tab clicks. Never wait on an ad network.
