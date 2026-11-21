@@ -16,7 +16,18 @@ class Settings:
     scope: str = field(default_factory=lambda: os.getenv('OIDC_SCOPES', 'openid profile email'))
     session_seconds: int = field(default_factory=lambda: int(os.getenv('SESSION_SECONDS', '3600')))
 
+    meta_dataset_id: str = field(default_factory=lambda: os.getenv('META_CAPI_DATASET_ID', ''))
+    meta_access_token: str = field(default_factory=lambda: os.getenv('META_CAPI_ACCESS_TOKEN', ''), repr=False)
+    meta_test_code: str = field(default_factory=lambda: os.getenv('META_CAPI_TEST_EVENT_CODE', ''))
+
+    def capi_enabled(self, pixel):
+        return bool(self.meta_access_token and pixel and self.meta_dataset_id == pixel)
+
     def validate(self):
+        if bool(self.meta_access_token) != bool(self.meta_dataset_id):
+            raise RuntimeError('Set both META_CAPI_DATASET_ID and META_CAPI_ACCESS_TOKEN.')
+        if self.meta_dataset_id and not self.meta_dataset_id.isdecimal():
+            raise RuntimeError('META_CAPI_DATASET_ID must be numeric.')
         if len(self.secret) < 32 or self.secret.startswith('replace-with-'):
             raise RuntimeError('Set SESSION_SECRET to at least 32 random characters.')
         p = urlsplit(self.base_url)

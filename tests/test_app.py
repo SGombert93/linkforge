@@ -169,3 +169,35 @@ def test_all_presets_have_bundled_icons(app):
     assert {'spotify','kkbox','qobuz','netease'} <= {s['id'] for s in SERVICES}
     for service in SERVICES:
         assert (ROOT/'static/icons'/f'{service["icon"]}.svg').is_file()
+
+
+@respx.mock
+def test_meta_server_click(client, app):
+    settings = app.state.settings
+    settings.meta_dataset_id = '123456789'
+    settings.meta_access_token = 'test-token'
+    settings.meta_test_code = 'TEST123'
+    release = client.post('/api/pages', headers=authorize(client, app),
+                          json=page(meta_pixel='123456789', published=True, privacy_text='Test policy')).json()
+    body = {'event_id': '170dbb51-c830-4e7a-b8fb-e6f63845ed12', 'service': 'custom',
+            'link_index': 0, 'consent': 'accepted', 'release_id': release['id']}
+    headers = {'origin': settings.base_url}
+    url = '/r/afterglow/click'
+    graph = respx.post('https://graph.facebook.com/v25.0/123456789/events').mock(
+        return_value=httpx.Response(200, json={'events_received': 1}))
+    assert client.post(url, json=body).status_code == 403
+    assert client.post(url, headers=headers, json=dict(body, consent='rejected')).status_code == 422
+    assert client.post(url, headers=headers, json=dict(body, link_index=1)).status_code == 409
+    assert not graph.called
+    assert client.post(url, headers=headers, json=body).status_code == 204
+    request = graph.calls.last.request
+    assert request.headers['authorization'] == 'Bearer test-token'
+    payload = json.loads(request.content)
+    event, = payload['data']
+    assert payload['test_event_code'] == 'TEST123'
+    assert event['event_name'] == 'StreamingLinkClick' and event['event_id'] == body['event_id']
+    assert event['event_source_url'] == settings.base_url + '/r/afterglow'
+    assert event['custom_data']['release_slug'] == 'afterglow'
+    settings.meta_dataset_id = '987654321'
+    assert client.post(url, headers=headers, json=body).status_code == 404
+    assert graph.call_count == 1
